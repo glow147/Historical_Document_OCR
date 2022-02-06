@@ -117,7 +117,7 @@ def train(args, model, criterion, dataloader, encoder, vocab, device):
             scaler.update()
             print(f'\r epoch : {epoch}/{args.epochs} batch_idx : {batch_idx} / {batches_len} loss : {loss.item():.2f} \
                     box_loss : {box_loss:.2f}, class_loss : {class_loss:.2f} ETA : {time_left}',end='')
-        print(f'avg_loss : {avg_loss/len(batches_len):.2f}')
+        print(f'avg_loss : {avg_loss/batches_len:.2f}')
         val_loss, mean_iou = evaluate(model, criterion, dataloader['valid'], encoder, device)
         model_weights = save_model(model, vocab, encoder)
         if val_loss < best_loss:
