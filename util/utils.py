@@ -127,7 +127,7 @@ def collate_fn(batch):
     batch[0] = torch.stack(list(batch[0]))
     return tuple(batch)
 
-def _nms_bbox(ploc, plabel, nms_score=0.1, iou_threshold=0.1): 
+def nms_bbox(ploc, plabel, nms_score=0.1, iou_threshold=0.1): 
     # Split class 0, not 0, if class is 0, bring second class
     scores, classes = torch.topk(F.softmax(plabel,dim=0),2,dim=0)
     non_background_mask = classes[0] != 0
@@ -152,7 +152,7 @@ def _nms_bbox(ploc, plabel, nms_score=0.1, iou_threshold=0.1):
 
     return _nms_bboxes, _nms_label, _nms_scores
 
-def _nms_eval_iou(ploc, plabel, gloc, nms_score=0.1, iou_threshold=0.1):
+def nms_eval_iou(ploc, plabel, gloc, nms_score=0.1, iou_threshold=0.1):
     if gloc.shape[0] == 4:
         gloc = gloc.transpose(1,0).contiguous()
     gloc = box_cxcywh_to_ltrb(gloc)
@@ -168,7 +168,7 @@ def _nms_eval_iou(ploc, plabel, gloc, nms_score=0.1, iou_threshold=0.1):
 
     return mean_iou
 
-def _nms_match_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc, glabel, criterion=0.5):
+def nms_match_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc, glabel, criterion=0.5):
     gloc = box_cxcywh_to_ltrb(gloc)
     # calc iou with ground-truth
     if len(_nms_bboxes) == 0: # no_object / set label unknown conf 0

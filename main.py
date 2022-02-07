@@ -149,7 +149,7 @@ def evaluate(model, criterion, dataloader, encoder, device):
         ploc_rescaled, _ = encoder.scale_back_batch(ploc, plabel, device)
         for idx in range(ploc_rescaled.shape[0]):
             mask = glabel[idx] > 0
-            iou = _nms_eval_iou(ploc_rescaled[idx][mask], plabel[idx][:,mask], gloc[idx][:,mask])
+            iou = nms_eval_iou(ploc_rescaled[idx][mask], plabel[idx][:,mask], gloc[idx][:,mask])
             if iou is None: # Detect No Object
                 continue 
             ious +=  iou
@@ -174,11 +174,11 @@ def test(args, model, dataloader, encoder, vocab, device):
             gloc_i = targets[idx]['boxes'].to(device)
             glabel_i = targets[idx]['labels'].to(device)
             AP_result['labels'][glabel_i] += 1
-            _nms_bboxes, _nms_labels, _nms_scores = _nms_bbox(ploc_rescaled[idx], plabel[idx], nms_score=0.1, iou_threshold=0.1)
+            _nms_bboxes, _nms_labels, _nms_scores = nms_bbox(ploc_rescaled[idx], plabel[idx], nms_score=0.1, iou_threshold=0.1)
             for criterion in AP_result:
                 if criterion == 'labels':
                     continue
-                confidence_labels, confidence_scores, gt_labels = _nms_eval_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc_i, glabel_i, criterion)
+                confidence_labels, confidence_scores, gt_labels = nms_eval_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc_i, glabel_i, criterion)
                 AP_result[criterion]['preds'].extend(confidence_labels.tolist())
                 AP_result[criterion]['scores'].extend(confidence_scores.tolist())
                 AP_result[criterion]['gt_labels'].extend(gt_labels.tolist())
