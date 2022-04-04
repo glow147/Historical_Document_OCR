@@ -94,11 +94,12 @@ def load_yethangul(dataPath):
     vocab = { 'char2idx' : char2idx, 'idx2char' : idx2char }
     return data_list, vocab
 
-def save_model(model, vocab, encoder):
+def save_model(model, vocab, encoder, backbone):
     weights = dict()
     weights['model'] = model.state_dict()
     weights['vocab'] = vocab
     weights['encoder'] = encoder
+    weights['backbone'] = backbone
 
     return weights
 
@@ -158,7 +159,7 @@ def nms_eval_iou(ploc, plabel, gloc, nms_score=0.1, iou_threshold=0.1):
     gloc = box_cxcywh_to_ltrb(gloc)
 
     # nms 
-    _nms_bboxes, _, _= _nms_bbox(ploc, plabel, nms_score, iou_threshold)
+    _nms_bboxes, _, _= nms_bbox(ploc, plabel, nms_score, iou_threshold)
     if len(_nms_bboxes) == 0: # no_object 
         return 0
 
@@ -172,15 +173,15 @@ def nms_match_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc, glabel, criterion=
     gloc = box_cxcywh_to_ltrb(gloc)
     # calc iou with ground-truth
     if len(_nms_bboxes) == 0: # no_object / set label unknown conf 0
-        return torch.ones(glabel.size()),torch.zeros(glabel.size()), glabel
+        return torch.tensor([]),torch.zeros(glabel.size()), glabel
     ious = calc_iou_tensor(_nms_bboxes, gloc)
     best_iou, best_idx = ious.max(dim=1)
     criterion_mask = best_iou >= criterion
     confidence_scores = _nms_scores[criterion_mask] * best_iou[criterion_mask]
     confidence_labels = _nms_labels[criterion_mask]
     match_labels = glabel[best_idx[criterion_mask]]
-
-    return confidence_labels, confidence_scores, match_labels
+    #confidence_bbox = _nms_bboxes[criterion_mask]
+    return confidence_labels, confidence_scores, match_labels#, confidence_bbox
 
 def calc_ap(pred_labels, pred_confs, gt_labels, total_labels):
     pred_labels, pred_confs, gt_labels = torch.as_tensor(pred_labels), torch.as_tensor(pred_confs), torch.as_tensor(gt_labels)
@@ -387,7 +388,6 @@ class DefaultBoxes(object):
 
         fk = fig_size/np.array(steps)
         self.aspect_ratios = aspect_ratios
-
         self.default_boxes = []
         # size of feature and number of feature
         for idx, sfeat in enumerate(self.feat_size):
@@ -395,15 +395,16 @@ class DefaultBoxes(object):
             sk2 = scales[idx+1]/fig_size
             sk3 = sqrt(sk1*sk2)
             all_sizes = [(sk1, sk1), (sk3, sk3)]
-            for alpha in aspect_ratios[idx]:
-                w, h = sk1*sqrt(alpha), sk1/sqrt(alpha)
-                all_sizes.append((w, h))
-                all_sizes.append((h, w))
+            #if True:
+            if idx == 1 or idx == 2:
+                for alpha in aspect_ratios[idx]:
+                    w, h = sk1*sqrt(alpha), sk1/sqrt(alpha)
+                    all_sizes.append((w, h))
+                    all_sizes.append((h, w))
             for w, h in all_sizes:
                 for i, j in itertools.product(range(sfeat), repeat=2):
                     cx, cy = (j+0.5)/fk[idx], (i+0.5)/fk[idx]
                     self.default_boxes.append((cx, cy, w, h))
-
         self.dboxes = torch.tensor(self.default_boxes, dtype=torch.float)
         self.dboxes.clamp_(min=0, max=1)
         # For IoU calculation
@@ -429,8 +430,8 @@ def dboxes512():
     figsize = 512
     feat_size = [8, 16, 32, 64]
     steps = [64, 32, 16, 8]
-    scales = [153, 99, 45, 15, 5, 261, 315]
-    aspect_ratios = [[2], [2], [2], [2], [2], [2]]
+    scales = [153, 99, 45, 15,8]
+    aspect_ratios = [[2], [2], [2], [2]]
     dboxes = DefaultBoxes(figsize, feat_size, steps, scales, aspect_ratios)
     return dboxes
 
@@ -458,3 +459,6 @@ def draw_result(outPath, imgPath, loc, label, prob, idx2char):
         draw.text((l+5,t-5), anno, font=font, fill=(0,0,0))
     img.save(outPath / img_name)
     print(f'{img_name} Done!')
+
+if __name__ == '__main__':
+    d = dboxes512()

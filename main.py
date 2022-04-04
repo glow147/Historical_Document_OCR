@@ -4,7 +4,7 @@ import time, datetime
 from pathlib import Path
 import torch.optim as optim
 from torch.autograd import Variable
-from models.model import SSD, Loss
+from models.model import SSD, Loss, ResNet
 from util.datasets import dataset_generator
 from util.box_ops import box_cxcywh_to_ltrb
 from collections import defaultdict
@@ -21,9 +21,11 @@ def main(args):
     if args.weight_fn:
         weights = torch.load(args.weight_fn, map_location=device)
         encoder = weights['encoder']
+        backbone = weights['backbone']
+        print(backbone)
         vocab = weights['vocab']
         dboxes = encoder.dbxoes_default
-        model = SSD(n_classes=len(vocab['char2idx']))
+        model = SSD(backbone=ResNet(backbone), n_classes=len(vocab['char2idx']))
         model.load_state_dict(weights['model'])
         criterion = Loss(dboxes, args.loss_method)
         print('Load weights file Done')
@@ -50,7 +52,7 @@ def main(args):
             train_list, valid_list = data_list[:split_point], data_list[split_point:]
             test_list = valid_list
 
-        model = SSD(n_classes=len(vocab['char2idx']))
+        model = SSD(backbone=ResNet(args.backbone), n_classes=len(vocab['char2idx']))
 
     train_set = dataset_generator(args, train_list, 'train')
     valid_set = dataset_generator(args, valid_list, 'valid')
@@ -69,7 +71,7 @@ def train(args, model, criterion, dataloader, encoder, vocab, device):
     scaler = torch.cuda.amp.GradScaler()
     weight_path = Path(args.weights)
     weight_path.mkdir(parents=True, exist_ok=True)
-    optimizer = optim.Adam(model.parameters(),lr = args.lr, weight_decay=args.weight_decay)
+    optimizer = optim.AdamW(model.parameters(),lr = args.lr, weight_decay=args.weight_decay)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, 0.95)
     print("Start Training")
     prev_time = time.time()
@@ -119,7 +121,7 @@ def train(args, model, criterion, dataloader, encoder, vocab, device):
                     box_loss : {box_loss:.2f}, class_loss : {class_loss:.2f} ETA : {time_left}',end='')
         print(f'avg_loss : {avg_loss/batches_len:.2f}')
         val_loss, mean_iou = evaluate(model, criterion, dataloader['valid'], encoder, device)
-        model_weights = save_model(model, vocab, encoder)
+        model_weights = save_model(model, vocab, encoder, args.backbone)
         if val_loss < best_loss:
             print(f'Loss improve from {best_loss:.2f} to {val_loss:.2f} Iou change from {best_iou:.2f} to {mean_iou:.2f}')
             best_loss = val_loss
@@ -164,7 +166,9 @@ def test(args, model, dataloader, encoder, vocab, device):
     AP_result = {0.25:defaultdict(lambda:[]), 
                  0.5 :defaultdict(lambda:[]), 
                  0.75:defaultdict(lambda:[])}
+    #AP_result = {0.8 : defaultdict(lambda:[])}
     AP_result['labels'] = torch.zeros(len(vocab['idx2char']))
+    f1_result = []
     for batch_idx, (imgs, targets) in enumerate(dataloader):
         imgs = imgs.to(device)
         targets = [{k: v for k, v in t.items()} for t in targets]
@@ -178,21 +182,40 @@ def test(args, model, dataloader, encoder, vocab, device):
             for criterion in AP_result:
                 if criterion == 'labels':
                     continue
-                confidence_labels, confidence_scores, gt_labels = nms_eval_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc_i, glabel_i, criterion)
+                confidence_labels, confidence_scores, gt_labels = nms_match_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc_i, glabel_i, criterion)
+                if len(confidence_labels) == 0:
+                    TP = torch.tensor(0.0)
+                    FP = torch.tensor(len(glabel_i),dtype=float)
+                else:
+                    TP = torch.sum(confidence_labels == gt_labels)
+                    FP = torch.sum(confidence_labels != gt_labels)
+                precision = TP / (TP+FP+1e-6)
+                recall = TP / (len(glabel_i)+1e-6)
+                #f1 = 2*(precision*recall) / (precision+recall+1e-6)
+                #f1_result.append(f1.item())
+                loc, label, prob = confidence_bbox.cpu(), confidence_labels.tolist(), confidence_scores.tolist()
+                htot, wtot = targets[idx]['orig_size'][0], targets[idx]['orig_size'][1]
+                loc[:,0::2] = loc[:,0::2] * wtot.item()
+                loc[:,1::2] = loc[:,1::2] * htot.item()
+                draw_result(args.output_dir, targets[idx]['imgPath'], loc, label, prob, vocab['idx2char'])
                 AP_result[criterion]['preds'].extend(confidence_labels.tolist())
                 AP_result[criterion]['scores'].extend(confidence_scores.tolist())
                 AP_result[criterion]['gt_labels'].extend(gt_labels.tolist())
-            loc, label, prob = _nms_bboxes.cpu(), _nms_labels.tolist(), _nms_scores.tolist()
-            htot, wtot = targets[idx]['orig_size'][0], targets[idx]['orig_size'][1]
-            loc[:,0::2] = loc[:,0::2] * wtot.item()
-            loc[:,1::2] = loc[:,1::2] * htot.item()
-            draw_result(args.output_dir, targets[idx]['imgPath'], loc, label, prob, vocab['idx2char'])
-        print(f'\r {batch_idx} / {len(dataloader)}', end='')
-    print()
+            #loc, label, prob = _nms_bboxes.cpu(), _nms_labels.tolist(), _nms_scores.tolist()
+            #htot, wtot = targets[idx]['orig_size'][0], targets[idx]['orig_size'][1]
+            #loc[:,0::2] = loc[:,0::2] * wtot.item()
+            #loc[:,1::2] = loc[:,1::2] * htot.item()
+            #draw_result(args.output_dir, targets[idx]['imgPath'], loc, label, prob, vocab['idx2char'])
+        print(f'\r {batch_idx} / {len(dataloader)}')#, end='')
     for criterion in AP_result:
         if criterion == 'labels':
             continue
-        mAP = calc_ap(AP_result[criterion]['preds'], AP_result[criterion]['scores'], AP_result[criterion]['gt_labels'], AP_result['labels']) 
+        TP = torch.sum(torch.tensor(AP_result[criterion]['preds']) == torch.tensor(AP_result[criterion]['gt_labels']))
+        FP = torch.sum(torch.tensor(AP_result[criterion]['preds']) != torch.tensor(AP_result[criterion]['gt_labels']))
+        precision = TP / (TP+FP+1e-6)
+        recall = TP / torch.sum(AP_result['labels'])
+        mAP = 2*(precision*recall) / (precision+recall)
+        #mAP = calc_ap(AP_result[criterion]['preds'], AP_result[criterion]['scores'], AP_result[criterion]['gt_labels'], AP_result['labels']) 
         print(f'{criterion}, {mAP}')
 
 if __name__ == '__main__':
@@ -201,7 +224,7 @@ if __name__ == '__main__':
     parser.add_argument("--data_dir", required=True, default="/data/train",
                         help="Path to the training folder")
     parser.add_argument("--weights", default="weights",
-                        help="Save Path to Trained model")
+                        help="weight files path to save")
     parser.add_argument("--type", default="chinese", type=str, choices=('chinese','yethangul'))
     parser.add_argument("--output_dir", default="images")
     parser.add_argument("--device", default='0',

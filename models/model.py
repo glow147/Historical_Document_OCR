@@ -27,16 +27,16 @@ class up_conv(nn.Module):
     def __init__(self, ch_in):
         super(up_conv, self).__init__()
         self.Conv1x1 = nn.Conv2d(ch_in, 256, kernel_size=1, stride=1, bias=False)
-        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.Conv3x3 = nn.Sequential(
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, bias=True),
-            nn.BatchNorm2d(256),
+        self.up = nn.Sequential(
+            nn.Conv2d(256, 256*4, kernel_size=3, stride=1, padding=1, bias=True),
+            nn.PixelShuffle(upscale_factor=2),
             nn.ReLU(inplace=True)
-            )
+        )
     def forward(self, c, p): 
         up_p = self.up(p)
         down_c = self.Conv1x1(c)
-        out = self.Conv3x3(up_p+down_c)
+
+        out = up_p + down_c
         return out
 
 
@@ -69,9 +69,7 @@ class ResNet(nn.Module):
         block2_out = get_channels(self.block2) #256
         
         self.P2_out = nn.Sequential(
-                      nn.Conv2d(block5_out, 256, kernel_size=1, stride=1, bias=False),
-                      nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, bias=True),
-                      nn.BatchNorm2d(256),
+                      nn.Conv2d(block5_out, 256, kernel_size=3, stride=1, padding=1, bias=True),
                       nn.ReLU(inplace=True))
         self.P3_out = up_conv(ch_in=block4_out)
         self.P4_out = up_conv(ch_in=block3_out)
@@ -107,7 +105,7 @@ class SSD(nn.Module):
         self.feature_extractor = backbone
 
         self.n_classes = n_classes
-        self.num_defaults = [4,4,4,4]
+        self.num_defaults = [2,4,4,2]
         self.loc = []
         self.conf = []
 
@@ -139,7 +137,7 @@ class SSD(nn.Module):
         p2,p3,p4,p5 = self.feature_extractor(x)
         
         detection_feed = [p2,p3,p4,p5]
-        # Feature Map 8x8x4, 16x16x4, 32x32x4,64x64x4
+        # Feature Map 8x8x2, 16x16x4, 32x32x4,64x64x2
         locs, confs = self.bbox_view(detection_feed, self.loc, self.conf)
 
         return locs, confs
