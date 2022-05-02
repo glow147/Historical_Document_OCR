@@ -17,7 +17,7 @@ def dataset_generator(args, data_list, mode):
 
     if mode == 'train':
         tx = T.Compose([
-             T.RandomRotate(),
+#             T.RandomRotate(),
              T.RandomSelect(
                 T.RandomResize(scales, max_size=1333),
                 T.Compose([
@@ -44,6 +44,7 @@ class Dataset(torch.utils.data.Dataset):
         self.data_list = data_list
         self.transform = transform
         self.angles = [0, 90, 180, 270]
+        self.type = args.type
 
     def __len__(self):
         return len(self.data_list)
@@ -74,6 +75,10 @@ class Dataset(torch.utils.data.Dataset):
         target['orig_size'] = torch.as_tensor([int(pic_height),int(pic_width)])
         target['size'] = torch.as_tensor([int(pic_height),int(pic_width)])
         target['imgPath'] = imgPath
+        if self.type == 'chinese':
+            target['style'] = imgPath.parent.stem
+        else: # yethangul
+            target['style'] = imgPath.stem.split('_')[0]
 
         if self.transform:
             img, target  = self.transform(img, target)

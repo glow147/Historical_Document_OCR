@@ -62,7 +62,7 @@ def load_chinese(dataPath, vocab=None):
                             uid = char2idx['unknown']
                     bbox_list.append([uid, lx, ly, width, height])
             img_path = Path(dataPath) / d.name / (jsonFile.stem + '.jpg')
-            data_list.append([str(img_path), bbox_list])
+            data_list.append([img_path, bbox_list])
 
     vocab = { 'char2idx' : char2idx, 'idx2char' : idx2char }
     return data_list, vocab
@@ -89,7 +89,7 @@ def load_yethangul(dataPath):
                     idx2char[uid] = char 
                 bbox_list.append([uid, lx, ly, width, height])
             img_path = Path(dataPath).parent / '이미지데이터' / d.name / (data['Image_filename'] + '.png')
-            data_list.append([str(img_path),bbox_list])
+            data_list.append([img_path,bbox_list])
     random.shuffle(data_list)
     vocab = { 'char2idx' : char2idx, 'idx2char' : idx2char }
     return data_list, vocab
@@ -173,15 +173,15 @@ def nms_match_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc, glabel, criterion=
     gloc = box_cxcywh_to_ltrb(gloc)
     # calc iou with ground-truth
     if len(_nms_bboxes) == 0: # no_object / set label unknown conf 0
-        return torch.tensor([]),torch.zeros(glabel.size()), glabel
+        return torch.tensor([]), torch.tensor([]), torch.zeros(glabel.size()), glabel
     ious = calc_iou_tensor(_nms_bboxes, gloc)
     best_iou, best_idx = ious.max(dim=1)
     criterion_mask = best_iou >= criterion
     confidence_scores = _nms_scores[criterion_mask] * best_iou[criterion_mask]
     confidence_labels = _nms_labels[criterion_mask]
     match_labels = glabel[best_idx[criterion_mask]]
-    #confidence_bbox = _nms_bboxes[criterion_mask]
-    return confidence_labels, confidence_scores, match_labels#, confidence_bbox
+    confidence_bbox = _nms_bboxes[criterion_mask]
+    return confidence_bbox, confidence_labels, confidence_scores, match_labels 
 
 def calc_ap(pred_labels, pred_confs, gt_labels, total_labels):
     pred_labels, pred_confs, gt_labels = torch.as_tensor(pred_labels), torch.as_tensor(pred_confs), torch.as_tensor(gt_labels)
@@ -428,10 +428,14 @@ class DefaultBoxes(object):
 
 def dboxes512():
     figsize = 512
-    feat_size = [8, 16, 32, 64]
-    steps = [64, 32, 16, 8]
-    scales = [153, 99, 45, 15,8]
-    aspect_ratios = [[2], [2], [2], [2]]
+    feat_size = [8, 16, 32]#, 64]
+    #feat_size = [8, 16, 32, 64]
+    steps = [64, 32, 16]#, 8]
+    #steps = [64, 32, 16, 8]
+    scales = [153, 99, 45, 15]#,8]
+    #scales = [153, 99, 45, 15,8]
+    aspect_ratios = [[2], [2], [2]]#, [2]]
+    #aspect_ratios = [[2], [2], [2], [2]]
     dboxes = DefaultBoxes(figsize, feat_size, steps, scales, aspect_ratios)
     return dboxes
 

@@ -24,11 +24,11 @@ def get_channels(layers):
     return ch
 
 class up_conv(nn.Module):
-    def __init__(self, ch_in):
+    def __init__(self, ch_in, ch_out):
         super(up_conv, self).__init__()
-        self.Conv1x1 = nn.Conv2d(ch_in, 256, kernel_size=1, stride=1, bias=False)
+        self.Conv1x1 = nn.Conv2d(ch_in, ch_out, kernel_size=1, stride=1, bias=False)
         self.up = nn.Sequential(
-            nn.Conv2d(256, 256*4, kernel_size=3, stride=1, padding=1, bias=True),
+            nn.Conv2d(ch_out, ch_out*4, kernel_size=3, stride=1, padding=1, bias=True),
             nn.PixelShuffle(upscale_factor=2),
             nn.ReLU(inplace=True)
         )
@@ -69,11 +69,11 @@ class ResNet(nn.Module):
         block2_out = get_channels(self.block2) #256
         
         self.P2_out = nn.Sequential(
-                      nn.Conv2d(block5_out, 256, kernel_size=3, stride=1, padding=1, bias=True),
+                      nn.Conv2d(block5_out, self.out_channels[0], kernel_size=3, stride=1, padding=1, bias=True),
                       nn.ReLU(inplace=True))
-        self.P3_out = up_conv(ch_in=block4_out)
-        self.P4_out = up_conv(ch_in=block3_out)
-        self.P5_out = up_conv(ch_in=block2_out)
+        self.P3_out = up_conv(ch_in=block4_out,ch_out=self.out_channels[3])
+        self.P4_out = up_conv(ch_in=block3_out,ch_out=self.out_channels[2])
+        self.P5_out = up_conv(ch_in=block2_out,ch_out=self.out_channels[1])
 
         self._init_weights_list([self.P2_out, self.P3_out, self.P4_out, self.P5_out])
 
@@ -135,8 +135,8 @@ class SSD(nn.Module):
 
     def forward(self, x):
         p2,p3,p4,p5 = self.feature_extractor(x)
-        
-        detection_feed = [p2,p3,p4,p5]
+        detection_feed = [p2,p3,p4] 
+        #detection_feed = [p2,p3,p4,p5]
         # Feature Map 8x8x2, 16x16x4, 32x32x4,64x64x2
         locs, confs = self.bbox_view(detection_feed, self.loc, self.conf)
 

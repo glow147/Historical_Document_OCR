@@ -163,12 +163,15 @@ def evaluate(model, criterion, dataloader, encoder, device):
 @torch.no_grad()
 def test(args, model, dataloader, encoder, vocab, device):
     model.eval()
+    '''
     AP_result = {0.25:defaultdict(lambda:[]), 
                  0.5 :defaultdict(lambda:[]), 
                  0.75:defaultdict(lambda:[])}
-    #AP_result = {0.8 : defaultdict(lambda:[])}
-    AP_result['labels'] = torch.zeros(len(vocab['idx2char']))
-    f1_result = []
+    '''
+    AP_result = {0.8 : defaultdict(lambda:[])}
+    #AP_result['labels'] = torch.zeros(len(vocab['idx2char']))
+    result_dict = defaultdict(lambda: defaultdict(lambda:[])) 
+    start = time.time()
     for batch_idx, (imgs, targets) in enumerate(dataloader):
         imgs = imgs.to(device)
         targets = [{k: v for k, v in t.items()} for t in targets]
@@ -177,12 +180,14 @@ def test(args, model, dataloader, encoder, vocab, device):
         for idx in range(ploc_rescaled.shape[0]):
             gloc_i = targets[idx]['boxes'].to(device)
             glabel_i = targets[idx]['labels'].to(device)
-            AP_result['labels'][glabel_i] += 1
+            style = targets[idx]['style']
+            name = targets[idx]['imgPath'].stem
+#            AP_result['labels'][glabel_i] += 1
             _nms_bboxes, _nms_labels, _nms_scores = nms_bbox(ploc_rescaled[idx], plabel[idx], nms_score=0.1, iou_threshold=0.1)
             for criterion in AP_result:
                 if criterion == 'labels':
                     continue
-                confidence_labels, confidence_scores, gt_labels = nms_match_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc_i, glabel_i, criterion)
+                confidence_bbox, confidence_labels, confidence_scores, gt_labels = nms_match_ap(_nms_bboxes, _nms_labels, _nms_scores, gloc_i, glabel_i, criterion)
                 if len(confidence_labels) == 0:
                     TP = torch.tensor(0.0)
                     FP = torch.tensor(len(glabel_i),dtype=float)
@@ -191,22 +196,44 @@ def test(args, model, dataloader, encoder, vocab, device):
                     FP = torch.sum(confidence_labels != gt_labels)
                 precision = TP / (TP+FP+1e-6)
                 recall = TP / (len(glabel_i)+1e-6)
-                #f1 = 2*(precision*recall) / (precision+recall+1e-6)
-                #f1_result.append(f1.item())
-                loc, label, prob = confidence_bbox.cpu(), confidence_labels.tolist(), confidence_scores.tolist()
-                htot, wtot = targets[idx]['orig_size'][0], targets[idx]['orig_size'][1]
-                loc[:,0::2] = loc[:,0::2] * wtot.item()
-                loc[:,1::2] = loc[:,1::2] * htot.item()
-                draw_result(args.output_dir, targets[idx]['imgPath'], loc, label, prob, vocab['idx2char'])
+                f1 = 2*(precision*recall) / (precision+recall+1e-6)
+                result_dict[style]['precision'].append(precision.item())
+                result_dict[style]['recall'].append(recall.item())
+                result_dict[style]['f1_score'].append(f1.item())
+                if args.output_dir:
+                    loc, label, prob = confidence_bbox.cpu(), confidence_labels.tolist(), confidence_scores.tolist()
+                    htot, wtot = targets[idx]['orig_size'][0], targets[idx]['orig_size'][1]
+                    loc[:,0::2] = loc[:,0::2] * wtot.item()
+                    loc[:,1::2] = loc[:,1::2] * htot.item()
+                    draw_result(args.output_dir, targets[idx]['imgPath'], loc, label, prob, vocab['idx2char'])
+                '''
                 AP_result[criterion]['preds'].extend(confidence_labels.tolist())
                 AP_result[criterion]['scores'].extend(confidence_scores.tolist())
                 AP_result[criterion]['gt_labels'].extend(gt_labels.tolist())
-            #loc, label, prob = _nms_bboxes.cpu(), _nms_labels.tolist(), _nms_scores.tolist()
-            #htot, wtot = targets[idx]['orig_size'][0], targets[idx]['orig_size'][1]
-            #loc[:,0::2] = loc[:,0::2] * wtot.item()
-            #loc[:,1::2] = loc[:,1::2] * htot.item()
-            #draw_result(args.output_dir, targets[idx]['imgPath'], loc, label, prob, vocab['idx2char'])
-        print(f'\r {batch_idx} / {len(dataloader)}')#, end='')
+                '''
+                print(f'name : {name}, style : {style}, precision : {precision:.2f}, recall : {recall:.2f}, f1_score : {f1:.2f}')
+        print(f'{batch_idx} / {len(dataloader)}')
+    print('-'*20,'total','-'*20)
+    total_pre = [] 
+    total_re = [] 
+    total_f1 = [] 
+    for style in result_dict:
+        print(style)
+        precision = sum(result_dict[style]['precision']) / len(result_dict[style]['precision'])
+        recall = sum(result_dict[style]['recall']) / len(result_dict[style]['recall'])
+        f1_score = sum(result_dict[style]['f1_score']) / len(result_dict[style]['f1_score'])
+        print('precision : ', precision)
+        print('recall : ', recall)
+        print('f1_score : ', f1_score)
+        total_pre += result_dict[style]['precision']
+        total_re += result_dict[style]['recall']
+        total_f1 += result_dict[style]['f1_score']
+    print('-'*45)
+    print('total precision : ', sum(total_pre) / len(total_pre))
+    print('total recall : ', sum(total_re) / len(total_re))
+    print('total f1_score : ', sum(total_f1) / len(total_f1))
+    print('total time : ', time.time() - start)
+    '''
     for criterion in AP_result:
         if criterion == 'labels':
             continue
@@ -217,16 +244,17 @@ def test(args, model, dataloader, encoder, vocab, device):
         mAP = 2*(precision*recall) / (precision+recall)
         #mAP = calc_ap(AP_result[criterion]['preds'], AP_result[criterion]['scores'], AP_result[criterion]['gt_labels'], AP_result['labels']) 
         print(f'{criterion}, {mAP}')
+    '''
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="Historical Document OCR with DETR")
+    parser = argparse.ArgumentParser(description="Historical Document OCR")
     
     parser.add_argument("--data_dir", required=True, default="/data/train",
                         help="Path to the training folder")
     parser.add_argument("--weights", default="weights",
                         help="weight files path to save")
     parser.add_argument("--type", default="chinese", type=str, choices=('chinese','yethangul'))
-    parser.add_argument("--output_dir", default="images")
+    parser.add_argument("--output_dir", default=None)
     parser.add_argument("--device", default='0',
                         help="set gpu number")
     parser.add_argument("--batch_size", default=4, type=int,

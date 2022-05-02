@@ -1,0 +1,1 @@
+python main.py --data_dir ../../data/2021/chinese/ --batch_size 16 --test --weight_fn weights/best.pt --device 0
