@@ -4,7 +4,7 @@ This code implemented based on SSD<a href=https://github.com/NVIDIA/DeepLearning
 
 And reimplement FAN-MCCD: Fast and Accurate Network for Multi-Scale Chinese Character Detection(2021, [<a href=https://www.ncbi.nlm.nih.gov/pmc/articles/PMC8586960/#sec3dot5-sensors-21-07289>link</a>])
 
-You can get this data <a href=https://aihub.or.kr/aidata/30753>[chinese]</a>,<a href=''>[YetHangul(not yet)]</a> 
+You can get this data <a href=https://aihub.or.kr/aidata/30753>[chinese]</a>,<a href='https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&aihubDataSe=realm&dataSetSn=504'>[YetHangul]</a> 
 
 YetHangul font from <a href=https://hangeul.naver.com/2014/archaicword>[here]</a>
 
